@@ -1,6 +1,7 @@
--- Wall: run this once in Supabase → SQL Editor → New query → Run.
+-- Wall: run in Supabase → SQL Editor → New query → Run.
 -- Creates the posts table, locks it down to read + insert only,
 -- turns on Realtime, and adds a public bucket for photos.
+-- Safe to run again: re-running it upgrades an older setup (e.g. adds GIFs).
 
 -- 1. Posts table -----------------------------------------------------------
 
@@ -9,10 +10,24 @@ create table if not exists public.posts (
   name        text not null check (char_length(trim(name)) between 1 and 40),
   message     text not null check (char_length(message) <= 280),
   image_url   text check (image_url is null or image_url like '%/storage/v1/object/public/wall-photos/%'),
-  created_at  timestamptz not null default now(),
-  -- A post needs text, a photo, or both.
-  constraint posts_not_empty check (char_length(trim(message)) > 0 or image_url is not null)
+  created_at  timestamptz not null default now()
 );
+
+-- GIFs come from GIPHY; only their media URLs are allowed.
+alter table public.posts add column if not exists gif_url text;
+
+alter table public.posts drop constraint if exists posts_gif_url_check;
+alter table public.posts add constraint posts_gif_url_check
+  check (gif_url is null or gif_url ~ '^https://(media[0-9]*|i)\.giphy\.com/');
+
+-- A post needs text, a photo or a GIF, and can't carry both a photo and a GIF.
+alter table public.posts drop constraint if exists posts_not_empty;
+alter table public.posts add constraint posts_not_empty
+  check (char_length(trim(message)) > 0 or image_url is not null or gif_url is not null);
+
+alter table public.posts drop constraint if exists posts_one_media;
+alter table public.posts add constraint posts_one_media
+  check (image_url is null or gif_url is null);
 
 create index if not exists posts_created_at_idx on public.posts (created_at desc);
 
@@ -35,10 +50,10 @@ create policy "Anyone can add a post"
   to anon, authenticated
   with check (true);
 
--- Visitors may only fill in these three columns. id and created_at always
--- come from the database, so nobody can backdate or pin a post to the top.
+-- Visitors may only fill in these columns. id and created_at always come
+-- from the database, so nobody can backdate or pin a post to the top.
 revoke insert, update, delete on public.posts from anon, authenticated;
-grant insert (name, message, image_url) on public.posts to anon, authenticated;
+grant insert (name, message, image_url, gif_url) on public.posts to anon, authenticated;
 
 -- 3. Realtime: push new posts to everyone with the page open ---------------
 
