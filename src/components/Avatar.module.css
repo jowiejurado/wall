@@ -1,0 +1,20 @@
+.avatar {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 50%;
+  font-family: var(--font-display), var(--font-body), sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  user-select: none;
+  transition: background-color 200ms ease, color 200ms ease;
+}
+
+.avatar[data-tone="blue"] { background: #dfe7ff; color: #1f45c4; }
+.avatar[data-tone="coral"] { background: #ffe1dc; color: #b23a2c; }
+.avatar[data-tone="mint"] { background: #d4f5ea; color: #0f7a5f; }
+.avatar[data-tone="sun"] { background: #fff1c2; color: #8a5a00; }
+.avatar[data-tone="grape"] { background: #ece3ff; color: #6234c9; }
+.avatar[data-tone="sky"] { background: #d9f1fb; color: #0b6787; }
+.avatar[data-tone="empty"] { background: var(--line); color: var(--muted); }

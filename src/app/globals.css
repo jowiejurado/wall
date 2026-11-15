@@ -1,22 +1,28 @@
 :root {
   color-scheme: light;
 
-  /* 2008 Facebook blues, on a sketchbook page. */
-  --fb: #3b5998;
-  --fb-dark: #2d4373;
-  --fb-light: #d8dfea;
-  --fb-tint: #edeff4;
-  --hatch: #c9d5ea;
+  --blue: #2f5bea;
+  --blue-dark: #2246c4;
+  --blue-soft: #e8eefe;
+  --blue-ring: #9db3f6;
+  --sun: #ffcf3f;
+  --coral: #ff6b5b;
+  --coral-soft: #ffe8e4;
+  --coral-ink: #b42f20;
+  --mint: #2cc6a0;
 
-  --paper: #fbfaf6;
-  --page: #f1efe8;
-  --ink: #1f2430;
-  --ink-2: #4a5160;
-  --muted: #6b7180;
-  --line: #2a2f3a;
-  --rule: #d9d6cc;
-  --error: #b3261e;
-  --focus: #f0b429;
+  --canvas: #f3f5fa;
+  --card: #ffffff;
+  --line: #e3e7f0;
+  --line-strong: #cdd3e0;
+  --ink: #172033;
+  --ink-2: #434c63;
+  --muted: #636c81;
+
+  --radius: 20px;
+  --shadow-sm: 0 1px 2px rgb(23 32 51 / 0.05);
+  --shadow: 0 1px 2px rgb(23 32 51 / 0.05), 0 12px 28px -18px rgb(23 32 51 / 0.28);
+  --page-width: 1040px;
 }
 
 * {
@@ -31,27 +37,31 @@ body {
 
 body {
   min-height: 100dvh;
-  background: var(--page);
+  background-color: var(--canvas);
+  /* A faint dot grid keeps the background friendly without competing with posts. */
+  background-image: radial-gradient(rgb(23 32 51 / 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
   color: var(--ink);
-  font-family: var(--font-hand), "Comic Sans MS", cursive;
-  font-size: 17px;
-  line-height: 1.45;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
 
 ::selection {
-  background: var(--fb);
-  color: #fff;
+  background: var(--sun);
+  color: var(--ink);
 }
 
 a {
-  color: var(--fb);
+  color: var(--blue);
   text-underline-offset: 3px;
 }
 
 :focus-visible {
-  outline: 3px solid var(--focus);
+  outline: 3px solid var(--blue);
   outline-offset: 2px;
+  border-radius: 8px;
 }
 
 button,
@@ -62,6 +72,21 @@ textarea {
 }
 
 code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--canvas);
   font-family: ui-monospace, monospace;
   font-size: 0.85em;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--line-strong);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }

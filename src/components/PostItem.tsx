@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { Post } from "@/lib/posts";
+import { Avatar } from "./Avatar";
 import styles from "./Wall.module.css";
 
 const rtf = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
@@ -36,20 +37,28 @@ function useNow() {
 
 export function PostItem({ post, fresh }: { post: Post; fresh: boolean }) {
   const now = useNow();
+  const media = post.image_url ?? post.gif_url;
 
   return (
     <li className={styles.post} data-fresh={fresh || undefined}>
-      <p className={styles.author}>{post.name}</p>
-      {post.message && <p className={styles.text}>{post.message}</p>}
-      {post.image_url && (
-        <a href={post.image_url} target="_blank" rel="noreferrer" className={styles.photo}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- user photos of unknown size, already served from Supabase's CDN */}
-          <img src={post.image_url} alt={`Photo shared by ${post.name}`} loading="lazy" />
-        </a>
-      )}
-      <time className={styles.time} dateTime={post.created_at} title={full.format(new Date(post.created_at))} suppressHydrationWarning>
-        {timeAgo(post.created_at, now)}
-      </time>
+      <Avatar name={post.name} size={44} />
+      <div className={styles.postBody}>
+        <p className={styles.meta}>
+          <span className={styles.author}>{post.name}</span>
+          <span aria-hidden="true">·</span>
+          <time dateTime={post.created_at} title={full.format(new Date(post.created_at))} suppressHydrationWarning>
+            {timeAgo(post.created_at, now)}
+          </time>
+        </p>
+        {post.message && <p className={styles.text}>{post.message}</p>}
+        {media && (
+          <a href={media} target="_blank" rel="noreferrer" className={styles.media} data-gif={post.gif_url ? true : undefined}>
+            {/* eslint-disable-next-line @next/next/no-img-element -- user media of unknown size from Supabase / GIPHY CDNs */}
+            <img src={media} alt={post.gif_url ? `GIF shared by ${post.name}` : `Photo shared by ${post.name}`} loading="lazy" />
+            {post.gif_url && <span className={styles.badge}>GIF</span>}
+          </a>
+        )}
+      </div>
     </li>
   );
 }

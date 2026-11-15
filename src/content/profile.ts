@@ -2,11 +2,16 @@
 export const profile = {
   name: "Jowie Trence Jurado",
   photo: "/profile.webp",
-  status: "is building things with React and Next.js.",
-  info: [
-    { label: "Networks", value: "University of Caloocan ’20" },
-    { label: "Current City", value: "Bulacan, Philippines" },
-    { label: "Works at", value: "RushHour Digital" },
-    { label: "Portfolio", value: "See my work", href: "https://portfolio-v2-beta-six-65.vercel.app" },
-  ],
+  headline: "Junior full-stack developer. I build things with React and Next.js.",
+  bio: "Thanks for stopping by! Leave a note, a GIF, or just say hi. Every post shows up here live.",
+  facts: [
+    { icon: "work", label: "Junior Full Stack Developer at RushHour Digital" },
+    { icon: "school", label: "BS Information Technology, University of Caloocan" },
+    { icon: "place", label: "Bulacan, Philippines" },
+  ] as const,
+  links: {
+    portfolio: "https://www.jowiejurado.dev/",
+    source: "https://github.com/jowiejurado/wall",
+  },
+  site: "https://wall.jowiejurado.dev",
 };

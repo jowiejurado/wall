@@ -1,10 +1,35 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { createPost, MAX_MESSAGE, MAX_NAME, MAX_PHOTO_BYTES, type Post } from "@/lib/posts";
-import styles from "./Wall.module.css";
+import { FaceSmileIcon, GifIcon, PhotoIcon, XMarkIcon } from "@heroicons/react/24/outline";
+import dynamic from "next/dynamic";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ClipboardEvent,
+  type DragEvent,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
+import { prepareImage } from "@/lib/image";
+import { createPost, MAX_MESSAGE, MAX_NAME, MAX_PHOTO_BYTES, PhotoUploadError, type Gif, type Post } from "@/lib/posts";
+import { Avatar } from "./Avatar";
+import { CharCounter } from "./CharCounter";
+import { GifPicker } from "./GifPicker";
+import styles from "./Composer.module.css";
+
+const EmojiPanel = dynamic(() => import("./EmojiPanel"), {
+  ssr: false,
+  loading: () => <div className={styles.panelLoading}>Loading emoji…</div>,
+});
 
 const NAME_KEY = "wall-name";
+const ACCEPTED = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+type Media = { kind: "photo"; file: File; preview: string } | { kind: "gif"; gif: Gif } | null;
+type Panel = "emoji" | "gif" | null;
 
 type Props = {
   owner: string;
@@ -12,16 +37,26 @@ type Props = {
   disabled: boolean;
 };
 
+/** Counts characters the way Postgres does (code points), so an emoji counts as one. */
+const lengthOf = (text: string) => [...text].length;
+
 export function Composer({ owner, onPosted, disabled }: Props) {
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [media, setMedia] = useState<Media>(null);
+  const [panel, setPanel] = useState<Panel>(null);
+  const [dragging, setDragging] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [justShared, setJustShared] = useState(false);
+
+  const formRef = useRef<HTMLFormElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const messageRef = useRef<HTMLTextAreaElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
+  const caret = useRef<number | null>(null);
   const ids = useId();
+  const firstName = owner.split(" ")[0];
 
   // Remember the visitor's name between posts and visits.
   useEffect(() => {
@@ -34,143 +69,290 @@ export function Composer({ owner, onPosted, disabled }: Props) {
     }
   }, []);
 
-  // Free the preview's object URL when it changes or the form unmounts.
+  // Grow the textarea with its content instead of scrolling inside it.
+  useLayoutEffect(() => {
+    const el = messageRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [message]);
+
+  // Free the photo preview's object URL when it's replaced or removed.
   useEffect(() => {
-    return () => {
-      if (preview) URL.revokeObjectURL(preview);
+    if (media?.kind !== "photo") return;
+    const url = media.preview;
+    return () => URL.revokeObjectURL(url);
+  }, [media]);
+
+  // Close an open picker on Escape or a click outside the composer.
+  useEffect(() => {
+    if (!panel) return;
+    const onKey = (e: globalThis.KeyboardEvent) => e.key === "Escape" && setPanel(null);
+    const onDown = (e: PointerEvent) => {
+      if (!formRef.current?.contains(e.target as Node)) setPanel(null);
     };
-  }, [preview]);
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("pointerdown", onDown);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerdown", onDown);
+    };
+  }, [panel]);
 
-  const remaining = MAX_MESSAGE - message.length;
-  const hasContent = message.trim().length > 0 || photo !== null;
-  const canShare = !disabled && !sending && name.trim().length > 0 && hasContent && remaining >= 0;
+  const used = lengthOf(message);
+  const hasContent = message.trim().length > 0 || media !== null;
+  const canShare = !disabled && !sending && hasContent && used <= MAX_MESSAGE;
 
-  function pickPhoto(file: File | undefined) {
+  async function attachPhoto(file: File | undefined) {
     setError(null);
     if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      setError("That file isn’t an image. Pick a JPG, PNG, WebP or GIF.");
+    if (!ACCEPTED.includes(file.type)) {
+      setError("That file type isn’t supported. Use a JPG, PNG, WebP or GIF.");
       return;
     }
-    if (file.size > MAX_PHOTO_BYTES) {
-      setError("That photo is over 5 MB. Pick a smaller one.");
+    const prepared = await prepareImage(file);
+    if (prepared.size > MAX_PHOTO_BYTES) {
+      setError("That image is over 5 MB. Pick a smaller one.");
       return;
     }
-    setPhoto(file);
-    setPreview(URL.createObjectURL(file));
+    setMedia({ kind: "photo", file: prepared, preview: URL.createObjectURL(prepared) });
+    setPanel(null);
   }
 
-  function clearPhoto() {
-    setPhoto(null);
-    setPreview(null);
+  function removeMedia() {
+    setMedia(null);
     if (fileRef.current) fileRef.current.value = "";
+    messageRef.current?.focus();
+  }
+
+  function insertEmoji(emoji: string) {
+    const el = messageRef.current;
+    const at = caret.current ?? el?.selectionStart ?? message.length;
+    const next = message.slice(0, at) + emoji + message.slice(at);
+    setMessage(next);
+    caret.current = at + emoji.length;
+    requestAnimationFrame(() => {
+      el?.setSelectionRange(caret.current!, caret.current!);
+    });
+  }
+
+  function togglePanel(next: Panel) {
+    caret.current = messageRef.current?.selectionStart ?? null;
+    setPanel((current) => (current === next ? null : next));
   }
 
   async function handleSubmit(event?: FormEvent) {
     event?.preventDefault();
     if (!canShare) return;
 
+    if (!name.trim()) {
+      setError("Add your name so people know who wrote this.");
+      nameRef.current?.focus();
+      return;
+    }
+
     setSending(true);
     setError(null);
+    setPanel(null);
     try {
-      const post = await createPost({ name, message, photo });
+      const post = await createPost({
+        name,
+        message,
+        photo: media?.kind === "photo" ? media.file : null,
+        gif: media?.kind === "gif" ? media.gif : null,
+      });
       onPosted(post);
       setMessage("");
-      clearPhoto();
+      setMedia(null);
+      if (fileRef.current) fileRef.current.value = "";
+      setJustShared(true);
+      setTimeout(() => setJustShared(false), 2200);
       try {
         localStorage.setItem(NAME_KEY, name.trim());
       } catch {
         // Not saved for next time; posting still worked.
       }
-      messageRef.current?.focus();
     } catch (err) {
-      setError(err instanceof Error && err.message.includes("photo") ? err.message : "Your post didn’t go through. Try again.");
+      setError(err instanceof PhotoUploadError ? err.message : "Your post didn’t go through. Check your connection and try again.");
     } finally {
       setSending(false);
     }
   }
 
-  // Ctrl/Cmd + Enter shares, like most chat boxes.
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) handleSubmit();
   }
 
-  return (
-    <form className={styles.composer} onSubmit={handleSubmit}>
-      <label className={styles.srOnly} htmlFor={`${ids}-message`}>
-        Write on {owner}’s wall
-      </label>
-      <textarea
-        ref={messageRef}
-        id={`${ids}-message`}
-        className={styles.message}
-        placeholder={`Write something to ${owner.split(" ")[0]}…`}
-        value={message}
-        maxLength={MAX_MESSAGE}
-        rows={3}
-        onChange={(e) => setMessage(e.target.value)}
-        onKeyDown={handleKeyDown}
-        disabled={disabled}
-        aria-describedby={`${ids}-count`}
-      />
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const file = [...event.clipboardData.files].find((f) => f.type.startsWith("image/"));
+    if (file) {
+      event.preventDefault();
+      attachPhoto(file);
+    }
+  }
 
-      {preview && (
-        <div className={styles.preview}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview */}
-          <img src={preview} alt="Photo to attach" />
-          <button type="button" className={styles.removePhoto} onClick={clearPhoto} aria-label="Remove photo">
-            <svg viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
+  function handleDrop(event: DragEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setDragging(false);
+    if (!disabled) attachPhoto(event.dataTransfer.files[0]);
+  }
+
+  return (
+    <form
+      ref={formRef}
+      className={styles.composer}
+      onSubmit={handleSubmit}
+      onDragOver={(e) => {
+        if ([...e.dataTransfer.types].includes("Files")) {
+          e.preventDefault();
+          setDragging(true);
+        }
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+      }}
+      onDrop={handleDrop}
+      data-dragging={dragging || undefined}
+      aria-busy={sending}
+    >
+      <div className={styles.row}>
+        <Avatar name={name} size={44} />
+
+        <div className={styles.body}>
+          <label className={styles.nameLine}>
+            <span>Posting as</span>
+            <input
+              ref={nameRef}
+              type="text"
+              value={name}
+              maxLength={MAX_NAME}
+              placeholder="your name"
+              autoComplete="name"
+              onChange={(e) => {
+                setName(e.target.value);
+                if (error) setError(null);
+              }}
+              disabled={disabled}
+              aria-invalid={error?.startsWith("Add your name") || undefined}
+              size={Math.max(name.length, 9)}
+            />
+          </label>
+
+          <label className={styles.srOnly} htmlFor={`${ids}-message`}>
+            Write on {owner}’s wall
+          </label>
+          <textarea
+            ref={messageRef}
+            id={`${ids}-message`}
+            className={styles.message}
+            placeholder={`Say hi to ${firstName}… 👋`}
+            value={message}
+            rows={1}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onSelect={(e) => (caret.current = e.currentTarget.selectionStart)}
+            disabled={disabled}
+          />
+
+          {media && (
+            <div className={styles.attachment} data-kind={media.kind}>
+              {/* eslint-disable-next-line @next/next/no-img-element -- local preview or GIPHY CDN */}
+              <img
+                src={media.kind === "photo" ? media.preview : media.gif.url}
+                alt={media.kind === "photo" ? "Photo to attach" : media.gif.title}
+              />
+              {media.kind === "gif" && <span className={styles.badge}>GIF</span>}
+              <button type="button" className={styles.remove} onClick={removeMedia} aria-label={`Remove ${media.kind}`}>
+                <XMarkIcon aria-hidden="true" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {panel && (
+        <div className={styles.panel} role="dialog" aria-label={panel === "emoji" ? "Pick an emoji" : "Pick a GIF"}>
+          {panel === "emoji" ? (
+            <EmojiPanel onPick={insertEmoji} />
+          ) : (
+            <GifPicker
+              onPick={(gif) => {
+                setMedia({ kind: "gif", gif });
+                setPanel(null);
+                messageRef.current?.focus();
+              }}
+            />
+          )}
         </div>
       )}
 
-      <div className={styles.composerBar}>
-        <label className={styles.nameField}>
-          <span>From</span>
+      <div className={styles.toolbar}>
+        <div className={styles.tools}>
           <input
-            type="text"
-            value={name}
-            maxLength={MAX_NAME}
-            placeholder="Your name"
-            autoComplete="name"
-            onChange={(e) => setName(e.target.value)}
+            ref={fileRef}
+            type="file"
+            accept={ACCEPTED.join(",")}
+            className={styles.srOnly}
+            onChange={(e) => attachPhoto(e.target.files?.[0])}
             disabled={disabled}
-            required
+            tabIndex={-1}
+            aria-hidden="true"
           />
-        </label>
+          <button
+            type="button"
+            className={styles.tool}
+            data-tone="mint"
+            onClick={() => fileRef.current?.click()}
+            disabled={disabled}
+            aria-label="Add a photo"
+            title="Photo"
+          >
+            <PhotoIcon aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className={styles.tool}
+            data-tone="grape"
+            onClick={() => togglePanel("gif")}
+            disabled={disabled}
+            aria-label="Add a GIF"
+            aria-expanded={panel === "gif"}
+            title="GIF"
+          >
+            <GifIcon aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className={styles.tool}
+            data-tone="sun"
+            onClick={() => togglePanel("emoji")}
+            disabled={disabled}
+            aria-label="Add an emoji"
+            aria-expanded={panel === "emoji"}
+            title="Emoji"
+          >
+            <FaceSmileIcon aria-hidden="true" />
+          </button>
+        </div>
 
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          className={styles.srOnly}
-          id={`${ids}-photo`}
-          onChange={(e) => pickPhoto(e.target.files?.[0])}
-          disabled={disabled}
-          tabIndex={-1}
-        />
-        <button type="button" className={styles.photoButton} onClick={() => fileRef.current?.click()} disabled={disabled}>
-          <svg viewBox="0 0 20 20" aria-hidden="true">
-            <path d="M3 6.5h3l1.5-2h5L14 6.5h3v9H3z" />
-            <circle cx="10" cy="11" r="2.8" />
-          </svg>
-          {photo ? "Change photo" : "Photo"}
-        </button>
-
-        <span
-          id={`${ids}-count`}
-          className={styles.count}
-          data-low={remaining <= 20 || undefined}
-          aria-label={`${remaining} characters left`}
-        >
-          {remaining}
-        </span>
-
-        <button type="submit" className={styles.share} disabled={!canShare}>
-          {sending ? "Sharing…" : "Share"}
-        </button>
+        <div className={styles.send}>
+          <span className={styles.hint} aria-hidden="true">
+            Ctrl + Enter
+          </span>
+          <CharCounter used={used} max={MAX_MESSAGE} />
+          <button type="submit" className={styles.share} disabled={!canShare} data-done={justShared || undefined}>
+            {sending ? (
+              <>
+                <span className={styles.spinner} aria-hidden="true" /> Sharing
+              </>
+            ) : justShared ? (
+              "Shared!"
+            ) : (
+              "Share"
+            )}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -178,6 +360,8 @@ export function Composer({ owner, onPosted, disabled }: Props) {
           {error}
         </p>
       )}
+
+      {dragging && <div className={styles.dropzone}>Drop your photo here</div>}
     </form>
   );
 }
