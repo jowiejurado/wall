@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Wall
 
-## Getting Started
+A 2008-style Facebook Wall. Visitors write a message (and optionally attach a photo), press **Share**, and it shows up at the top of the feed for everyone, live.
 
-First, run the development server:
+Built with React, Next.js and Supabase. Deployed on Vercel.
+
+**Live:** _add your Vercel URL here_
+
+## Features
+
+- Write a message (up to 280 characters, with a live counter) and press **Share**, or Ctrl/Cmd + Enter
+- Posts are saved in a Supabase `posts` table and the feed shows the latest 50, newest first
+- New posts from anyone appear instantly without a refresh (Supabase Realtime)
+- Optional photo on a post (Supabase Storage, images up to 5 MB)
+- The visitor's name is remembered for next time
+- Loading, empty and error states, and it works on phones
+
+## How it works
+
+| File | What it does |
+| --- | --- |
+| `supabase/setup.sql` | Creates the table, security rules, Realtime and the photo bucket |
+| `src/lib/posts.ts` | All database calls: fetch posts, create a post (with photo upload), subscribe to new posts |
+| `src/components/Wall.tsx` | Loads the feed, listens for new posts, merges them in without duplicates |
+| `src/components/Composer.tsx` | The write box: name, message, photo, character count, Share |
+| `src/components/PostItem.tsx` | One post, with "5 minutes ago" style times that keep updating |
+| `src/content/profile.ts` | The wall owner's name, photo and info. Change it to make the wall yours |
+
+### Security
+
+There is no login, so the browser uses Supabase's public anon key. Row Level Security
+lets visitors **read** and **add** posts only; there are no update or delete rules, so
+nobody can edit or remove someone else's post. Visitors can only set `name`, `message`
+and `image_url`; `id` and `created_at` always come from the database, so posts can't be
+backdated or pinned to the top. Length limits are enforced in the database as well as
+the form.
+
+## Set up Supabase
+
+1. Create a free project at [supabase.com](https://supabase.com).
+2. Open **SQL Editor → New query**, paste everything from `supabase/setup.sql`, and click **Run**.
+3. Open **Project Settings → API** (or **Connect**) and copy the **Project URL** and the **anon public** key.
+
+## Run it locally
 
 ```bash
+cp .env.example .env.local   # then paste your URL and anon key into .env.local
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Open http://localhost:3000.
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Import the repo on Vercel, add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+under **Environment Variables**, and click **Deploy**.
